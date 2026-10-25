@@ -1,32 +1,61 @@
-# FlyLife — prototype 0.6
+# FlyLife 1.0 — Seeded Fly-Life Sandbox
 
-An offline-first Android Canvas prototype for the FlyLife concept. It is still a prototype, but the 0.1–0.6 foundation now lives in one project and one persistent fly/world progression.
+**FlyLife 1.0.0** is an offline-first Android 2D life-simulation sandbox. One persistent fly lives in a seed-generated home; progress, skins, individual traits, achievements and the apiary are part of the same save. The release has no multiplayer or network dependency.
 
-## Included in 0.6
-- **Seeded house generation:** home / large home / mansion footprints, six room types, interior door gaps, exterior windows, furniture and food. The same seed recreates the same layout.
-- **Fly simulation:** movement, collision checks, hunger, energy, food seeking, room visitation memory, exploration, escape goal and progression.
-- **Room-aware route planning:** a breadth-first search over the orthogonal room graph selects intermediate room-centre waypoints. It is a lightweight 2D navigation model, not a full physics/pathfinding engine.
-- **Six modes:** Escape, Free Life, Training, Fly Lab, Evolution and Real Brain (explicitly experimental placeholder). Training lets the player set a destination; Fly Lab supports manual targets.
-- **Persistent progression:** coins, level, needs, house seed, exploration bits, food/escape/training totals, cosmetics and achievements survive app restarts.
-- **Achievements and cosmetics:** unlockable milestones and fly body-colour options.
-- **Apiary:** save up to 12 fly profiles with colour, skill, XP, behaviour trait and curiosity/stamina; select, recall or release a profile. Apiary flies generate small periodic and timestamp-based offline coin income.
-- **Mobile-first UI:** landscape Canvas, no third-party runtime dependencies, no network permission required.
+## Release features
 
-## Honest limitations
-- This is not yet a finished commercial game. Furniture placement and collision are intentionally lightweight and should be play-tested on device.
-- The “Neural Fly” idea is currently represented by a small rule-based behaviour policy plus exploration variation; it is **not** a trained neural network.
-- “Real Brain / FlyWire” is a labelled research placeholder. No connectome data or biological neural simulation is included.
-- The current prototype uses one floor; multi-floor buildings, richer individual memories, advanced furniture constraints, sound/art polish and LAN multiplayer remain later work (0.7+).
-- Apiary offline income is a simple game-economy mechanic, not a background service.
+### World generation
+- Four deterministic house footprints: family home, large home, estate and mansion (from 6 to 20 rooms).
+- Eight room types with room-specific floor materials and furniture.
+- Seeded placement variation, doors, exterior windows, a front exit, food positions and small decorative details.
+- The same numeric seed regenerates the same room layout, furniture positions and food placement.
+- Navigation-grid validation checks that door approaches and rooms remain connected. If a procedural furniture combination blocks an aisle, the generator removes a non-essential obstacle rather than shipping a sealed room.
 
-## Build
-GitHub Actions workflow `.github/workflows/android.yml` builds a debug APK on pushes to `main`/`master` and publishes it as the `FlyLife-debug-apk` artifact. Open the repository's Actions tab, select the latest successful run and download the artifact.
+### Fly simulation and behaviour
+- Animated procedural fly rendering: compound eyes, antennae, six legs, segmented body, translucent wing pairs, wing veins, shading and 12 skins with individual palettes and markings.
+- Needs: hunger and energy. Food is consumed only on contact, replenishes needs and respawns after a cooldown. Curious flies also investigate window-lit areas.
+- Room-entry memory, exploration rewards, experience and levels.
+- Grid-BFS route planning with furniture collision and doorway checks. Navigation has regression tests across varied seeds and rooms.
+- Six modes: Escape, Free Life, Training, Fly Lab, Evolution and Real Brain.
+- Training uses touch targets. Fly Lab lets you issue manual movement goals. Evolution changes simple behavioural genes at level milestones.
+- Real Brain shows a transparent sensory/motor-drive demonstration; it is **not** a real FlyWire connectome or a trained neural network.
 
-## Roadmap
-- 0.1: basic room, fly and movement/avoidance.
-- 0.2: reproducible procedural house.
-- 0.3: room graph, basic memory, training targets and behaviour policy.
-- 0.4: robust saved progression and multiple fly profiles.
-- 0.5: achievements, cosmetics and settings.
-- 0.6: apiary, saved/recallable flies and offline income.
-- 0.7+: LAN multiplayer, multi-floor generation, richer AI and presentation.
+### Progression
+- Persistent coins, fly profile, needs, level, world seed, explored rooms, achievements and cosmetics.
+- Twelve skins; purchase and equip them in the achievements screen.
+- Thirteen achievements.
+- Apiary stores up to 12 individual fly profiles, with recall, release and rename. Profiles preserve name, skin, traits, genes, level, XP and exploration memory.
+- Apiary income accrues while the app is open, including menu screens. Returning from the background credits a capped offline bonus of up to 1,500 coins.
+- Settings supports exact numeric seed entry, random new worlds, needs reset and save reset.
+
+### Graphics and platform
+- Landscape Android Canvas renderer, designed custom interface, detailed top-down room/furniture illustration, animation and an app icon.
+- Android min SDK 23, target/compile SDK 35, version name `1.0.0`.
+- No third-party runtime libraries, internet permission, login or server requirement.
+
+## What 1.0 does not claim
+
+This is a polished 2D foundation, not a 3D game engine. It does not contain LAN multiplayer, multi-floor houses, real connectome data, a trained machine-learning model, or sound/audio assets. `Real Brain` is deliberately labelled as a simplified educational behaviour model. Those features need separate design, data and testing rather than a misleading placeholder.
+
+## Build the APK
+
+The GitHub Actions workflow builds a debug APK when you push to `main` or `master` or manually run the workflow. In the repository, open **Actions → Build FlyLife Android APK → latest successful run → Artifacts → FlyLife-1.0-debug-apk**.
+
+For a local Android build, use Java 17, Android SDK platform 35 and Gradle 8.9:
+
+```bash
+gradle assembleDebug --no-daemon
+```
+
+Output: `app/build/outputs/apk/debug/app-debug.apk`.
+
+## Test the procedural engine without the Android SDK
+
+```bash
+javac -encoding UTF-8 -d /tmp/flylife-test \
+  app/src/main/java/com/flylife/game/WorldModel.java \
+  tools/WorldModelSmokeTest.java
+java -cp /tmp/flylife-test WorldModelSmokeTest
+```
+
+The smoke test checks repeatable and extreme seeds, food placement, collision and furniture separation, tap-target correction, exit routes and 600 cross-room routes across 200 generated seeds.
