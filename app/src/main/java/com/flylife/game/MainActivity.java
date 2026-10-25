@@ -2,6 +2,7 @@ package com.flylife.game;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.MotionEvent;
 import android.graphics.Canvas;
@@ -9,51 +10,28 @@ import android.graphics.Paint;
 import android.graphics.Color;
 import android.graphics.RectF;
 import android.content.SharedPreferences;
-import android.os.SystemClock;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 
 public class MainActivity extends Activity {
-    @Override public void onCreate(Bundle state) { super.onCreate(state); getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY); setContentView(new FlyLifeView()); }
-
-    class FlyLifeView extends View {
-        Paint p = new Paint(3); Random rng = new Random(); SharedPreferences prefs;
-        float fx=0.5f, fy=0.53f, tx=0.7f, ty=0.4f; int mode=0, coins, seed; long last=0, lastReward=0; float phase=0;
-        String[] modes={"SIMPLE AI","OBSERVER","TRAINING","FLY LAB"};
-        FlyLifeView(){ super(MainActivity.this); prefs=getSharedPreferences("flylife",MODE_PRIVATE); coins=prefs.getInt("coins",0); seed=prefs.getInt("seed",(int)System.currentTimeMillis()); fx=prefs.getFloat("fx",0.5f); fy=prefs.getFloat("fy",0.5f); lastReward=prefs.getLong("last",System.currentTimeMillis()); long hours=Math.max(0,Math.min(24,(System.currentTimeMillis()-lastReward)/3600000)); coins+=(int)hours; prefs.edit().putInt("coins",coins).putLong("last",System.currentTimeMillis()).apply(); }
-        void color(Canvas c,int col){p.setColor(col);p.setStyle(Paint.Style.FILL);}
-        void text(Canvas c,String s,float x,float y,float size,int col){color(c,col);p.setTextSize(size);c.drawText(s,x,y,p);}
-        @Override protected void onDraw(Canvas c){super.onDraw(c); float w=getWidth(),h=getHeight(); c.drawColor(Color.rgb(20,27,39));
-            // Room and procedural furniture layout derived from seed
-            float left=w*.055f, top=h*.12f, right=w*.79f, bottom=h*.88f;
-            color(c,0xffd8c5a3); c.drawRoundRect(new RectF(left,top,right,bottom),18,18,p);
-            color(c,0xff8d7258); c.drawRect(left,top,right,top+12,p); c.drawRect(left,bottom-12,right,bottom,p); c.drawRect(left,top,left+12,bottom,p); c.drawRect(right-12,top,right,bottom,p);
-            // window
-            color(c,0xff79c7e3); c.drawRoundRect(new RectF(w*.33f,top+4,w*.49f,top+15),3,3,p); color(c,0xffe9f8ff); c.drawRect(w*.405f,top+4,w*.411f,top+15,p);
-            // seed-generated furniture
-            rng.setSeed(seed); int layout=rng.nextInt(3);
-            color(c,0xff527c8e); c.drawRoundRect(new RectF(w*(layout==0?.12f:.58f),h*.55f,w*(layout==0?.27f:.72f),h*.76f),12,12,p);
-            color(c,0xfff0d9ad); c.drawRoundRect(new RectF(w*.18f,h*.58f,w*.25f,h*.65f),7,7,p);
-            color(c,0xff6d8f57); c.drawRect(w*.59f,h*.23f,w*.62f,h*.37f,p); color(c,0xff4d7142); c.drawCircle(w*.605f,h*.22f,Math.min(w,h)*.045f,p);
-            color(c,0xff9e6b45); c.drawRoundRect(new RectF(w*.68f,h*.68f,w*.75f,h*.77f),8,8,p); color(c,0xffffdf76); c.drawCircle(w*.715f,h*.665f,Math.min(w,h)*.018f,p);
-            // food marker
-            color(c,0xffdc6b53); c.drawCircle(w*.39f,h*.72f,Math.min(w,h)*.014f,p); text(c,"FOOD",w*.37f,h*.77f,Math.min(w,h)*.018f,0xff68432f);
-            // fly movement
-            long now=SystemClock.uptimeMillis(); float dt=last==0?.016f:Math.min(.05f,(now-last)/1000f); last=now; phase+=dt;
-            if(mode!=2){ float dx=tx-fx,dy=ty-fy,dist=(float)Math.sqrt(dx*dx+dy*dy); if(dist<.018f || (rng.nextFloat()<.008f)){tx=.12f+rng.nextFloat()*.62f;ty=.2f+rng.nextFloat()*.6f;} else {fx+=dx/dist*dt*(mode==1?.12f:.2f);fy+=dy/dist*dt*(mode==1?.10f:.17f);} }
-            float bx=w*(left/w+fx*(right-left)/w), by=h*(top/h+fy*(bottom-top)/h); float r=Math.min(w,h)*.022f;
-            color(c,0xff151515); c.drawOval(new RectF(bx-r*1.2f,by-r*.45f,bx+r*1.2f,by+r*.45f),p); color(c,0xff4b4141); c.drawOval(new RectF(bx-r*.45f,by-r*.7f,bx+r*.45f,by+r*.7f),p);
-            color(c,0xbbe8f8ff); c.drawOval(new RectF(bx-r*1.05f,by-r*1.3f,bx-r*.1f,by-r*.35f),p); c.drawOval(new RectF(bx+r*.05f,by-r*1.3f,bx+r*1.0f,by-r*.35f),p);
-            // HUD
-            color(c,0xff111827); c.drawRoundRect(new RectF(12,12,w*.29f,h*.105f),16,16,p); text(c,"FLYLIFE  •  PROTOTYPE 0.1",26,38,Math.min(w,h)*.024f,Color.WHITE); text(c,"Coins: "+coins+"   Seed: "+seed,26,62,Math.min(w,h)*.021f,0xffc9d5e7);
-            float bx0=w*.81f; text(c,"MODES",bx0,h*.16f,Math.min(w,h)*.026f,0xffc9d5e7);
-            for(int i=0;i<modes.length;i++){float y=h*(.21f+i*.115f);color(c,mode==i?0xff397b78:0xff293548);c.drawRoundRect(new RectF(bx0,y,w*.97f,y+h*.083f),12,12,p);text(c,modes[i],bx0+14,y+h*.052f,Math.min(w,h)*.024f,Color.WHITE);}
-            color(c,0xff293548);c.drawRoundRect(new RectF(bx0,h*.70f,w*.97f,h*.79f),12,12,p);text(c,"NEW HOUSE",bx0+14,h*.753f,Math.min(w,h)*.024f,Color.WHITE);
-            text(c,mode==0?"Fly explores automatically":mode==1?"Relax and observe":mode==2?"Tap room to set a target":"Lab: observe behaviour",bx0,h*.85f,Math.min(w,h)*.018f,0xffc9d5e7);
-            if(mode==2){color(c,0xfff3c969);c.drawCircle(tx*w,ty*h,Math.min(w,h)*.012f,p);} postInvalidateDelayed(16);
-        }
-        @Override public boolean onTouchEvent(MotionEvent e){if(e.getAction()!=MotionEvent.ACTION_UP)return true;float x=e.getX(),y=e.getY(),w=getWidth(),h=getHeight(),bx=w*.81f;
-            if(x>bx){int idx=(int)((y/h-.21f)/.115f);if(y>h*.70f&&y<h*.80f){seed=rng.nextInt(999999);rng.setSeed(seed);fx=.5f;fy=.5f;tx=.7f;ty=.4f;}else if(idx>=0&&idx<4&&y<h*.21f+4*.115f*h){mode=idx;}else if(y<h*.21f){mode=0;}}
-            else if(mode==2){tx=Math.max(.05f,Math.min(.95f,(x-w*.055f)/(w*.79f-w*.055f)));ty=Math.max(.05f,Math.min(.95f,(y-h*.12f)/(h*.88f-h*.12f)));}else {coins++;prefs.edit().putInt("coins",coins).apply();}
-            prefs.edit().putInt("seed",seed).putInt("mode",mode).putFloat("fx",fx).putFloat("fy",fy).putLong("last",System.currentTimeMillis()).apply();invalidate();return true;}
-    }
+ @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894|1024|512);setContentView(new Game());}
+ class Room {int type,x,y; Room(int t,int xx,int yy){type=t;x=xx;y=yy;} String name(){return new String[]{"LIVING","KITCHEN","BEDROOM","BATHROOM","HALL"}[type];}}
+ class Item {float x,y,w,h;int type;Item(float a,float b,float c,float d,int t){x=a;y=b;w=c;h=d;type=t;}}
+ class Game extends View {
+  Paint p=new Paint(3); Random random=new Random(); SharedPreferences prefs=getSharedPreferences("flylife",0); List<Room> rooms=new ArrayList<>();List<Item> items=new ArrayList<>();
+  int seed,mode,coins,level=1,foods,escapes,visited;int cols=3,rows=2;float fx=.18f,fy=.22f,tx=.6f,ty=.6f,vx,vy,hunger=.1f,energy=1,curiosity=.65f;long frame,lastSave,toastAt;String toast="FlyLife 0.2 — procedural home";boolean paused=false,help=false,escaped=false;float W,H,L,T,R,B,unit;
+  String[] modes={"ESCAPE","FREE LIFE","TRAINING","FLY LAB","EVOLUTION","REAL BRAIN"};
+  Game(){super(MainActivity.this);seed=prefs.getInt("seed",(int)System.currentTimeMillis());mode=prefs.getInt("mode",1);coins=prefs.getInt("coins",0);level=prefs.getInt("level",1);foods=prefs.getInt("foods",0);escapes=prefs.getInt("escapes",0);fx=prefs.getFloat("fx",.18f);fy=prefs.getFloat("fy",.22f);hunger=prefs.getFloat("hunger",.1f);energy=prefs.getFloat("energy",1);long h=Math.min(168,Math.max(0,(System.currentTimeMillis()-prefs.getLong("last",System.currentTimeMillis()))/3600000));coins+=(int)h;if(h>0)toast="Offline bonus +"+h;generate();}
+  void fill(Canvas c,int color){p.setColor(color);p.setStyle(Paint.Style.FILL);}void text(Canvas c,String s,float x,float y,float z,int color){fill(c,color);p.setTextSize(z);p.setTypeface(android.graphics.Typeface.create("sans-serif",1));c.drawText(s,x,y,p);}void box(Canvas c,float l,float t,float r,float b,int color){fill(c,color);c.drawRoundRect(new RectF(l,t,r,b),7,7,p);}float clamp(float v,float a,float b){return Math.max(a,Math.min(b,v));}
+  void generate(){rooms.clear();items.clear();random.setSeed(seed);int kind=Math.abs(seed%3);cols=kind==0?3:kind==1?4:5;rows=kind==0?2:3;for(int y=0;y<rows;y++)for(int x=0;x<cols;x++){int type=random.nextInt(5);if(x==0&&y==0)type=0;if(x==cols-1&&y==0)type=1;if(x==0&&y==rows-1)type=2;if(x==cols-1&&y==rows-1)type=3;rooms.add(new Room(type,x,y));}for(Room r:rooms){int n=r.type==1||r.type==2?2:1;for(int i=0;i<n;i++){float rw=.13f+random.nextFloat()*.13f,rh=.1f+random.nextFloat()*.14f;float x=(r.x+ .08f+random.nextFloat()*.35f)/cols,y=(r.y+.13f+random.nextFloat()*.35f)/rows;items.add(new Item(x,y,rw/cols,rh/rows,r.type));}}visited=0;escaped=false;tx=.7f;ty=.45f;save();}
+  boolean blocked(float x,float y){for(Item i:items)if(x>i.x-.018f&&x<i.x+i.w+.018f&&y>i.y-.018f&&y<i.y+i.h+.018f)return true;return false;}
+  void save(){prefs.edit().putInt("seed",seed).putInt("mode",mode).putInt("coins",coins).putInt("level",level).putInt("foods",foods).putInt("escapes",escapes).putInt("visited",visited).putFloat("fx",fx).putFloat("fy",fy).putFloat("hunger",hunger).putFloat("energy",energy).putLong("last",System.currentTimeMillis()).apply();}
+  @Override protected void onDraw(Canvas c){super.onDraw(c);W=getWidth();H=getHeight();c.drawColor(0xff101722);float panel=W*.24f,pad=Math.min(W,H)*.025f;L=pad;T=pad;R=W-panel-pad;B=H-pad;unit=Math.min((R-L)/cols,(B-T)/rows);float gw=unit*cols,gh=unit*rows;L+=(R-L-gw)/2;T+=(B-T-gh)/2;R=L+gw;B=T+gh;drawHouse(c);tick();drawFly(c);drawPanel(c,panel);if(help){box(c,W*.13f,H*.18f,W*.82f,H*.82f,0xf51b2738);text(c,"FLYLIFE — HELP",W*.2f,H*.27f,H*.035f,Color.WHITE);String[] s={"ESCAPE: fly tries to reach the bottom exit.","FREE LIFE: explore, avoid furniture, seek food.","TRAINING: tap inside the house to set a target.","New House makes a new reproducible seed.","Neural Fly and FlyWire are future experiments."};for(int i=0;i<s.length;i++)text(c,s[i],W*.2f,H*(.37f+i*.075f),H*.022f,0xffd8e2ef);}if(paused){box(c,W*.36f,H*.42f,W*.64f,H*.58f,0xee101722);text(c,"PAUSED",W*.43f,H*.51f,H*.04f,Color.WHITE);}postInvalidateDelayed(paused?150:16);}
+  void drawHouse(Canvas c){box(c,L-5,T-5,R+5,B+5,0xff51463d);int[] floors={0xffd8c5a4,0xffd2d0bd,0xffd9c1a5,0xffbfc9bf,0xffd7c8ae};for(Room rm:rooms){float l=L+rm.x*unit,t=T+rm.y*unit,r=l+unit,b=t+unit;fill(c,floors[rm.type]);c.drawRect(l+2,t+2,r-2,b-2,p);for(float yy=t+unit*.13f;yy<b;yy+=unit*.13f){fill(c,0x22ffffff);c.drawRect(l+4,yy,r-4,yy+1,p);}text(c,rm.name(),l+7,t+17,Math.max(8,unit*.055f),0xff705d4b);}fill(c,0xff51463d);for(int x=1;x<cols;x++)for(int y=0;y<rows;y++){float xx=L+x*unit,yy=T+y*unit; c.drawRect(xx-3,yy+2,xx+3,yy+unit*.38f,p);c.drawRect(xx-3,yy+unit*.61f,xx+3,yy+unit-2,p);}for(int y=1;y<rows;y++)for(int x=0;x<cols;x++){float xx=L+x*unit,yy=T+y*unit;c.drawRect(xx+2,yy-3,xx+unit*.38f,yy+3,p);c.drawRect(xx+unit*.61f,yy-3,xx+unit-2,yy+3,p);}fill(c,0xff79d5f2);c.drawRect(L+unit*.18f,T-5,L+unit*.48f,T+5,p);c.drawRect(R-unit*.5f,B-5,R-unit*.2f,B+5,p);fill(c,0xffffd16d);c.drawRect(L+unit*.42f,B-5,L+unit*.58f,B+6,p);for(Item i:items){float l=L+i.x*cols*unit,t=T+i.y*rows*unit,r=l+i.w*cols*unit,b=t+i.h*rows*unit;int cc=i.type==0?0xff577e8b:i.type==1?0xff9c714a:i.type==2?0xff8e9bb0:i.type==3?0xff6c9d9a:0xffa58a63;box(c,l,t,r,b,cc);}Room kitchen=rooms.get(0);for(Room rm:rooms)if(rm.type==1){kitchen=rm;break;}float foodx=(kitchen.x+.72f)/cols,foody=(kitchen.y+.72f)/rows;fill(c,0xffdf5a4e);c.drawCircle(L+foodx*cols*unit,T+foody*rows*unit,Math.max(3,unit*.025f),p);text(c,"FOOD",L+foodx*cols*unit-unit*.05f,T+foody*rows*unit+unit*.07f,Math.max(7,unit*.04f),0xff783b31);}
+  void tick(){if(paused)return;long now=SystemClock.uptimeMillis();float dt=frame==0?.016f:Math.min(.04f,(now-frame)/1000f);frame=now;if(escaped)return;hunger=Math.min(1,hunger+dt*.0015f);energy=Math.max(.15f,energy-dt*.00025f);int ri=(int)(fy*rows)*cols+(int)(fx*cols);if(ri>=0&&ri<30)visited|=1<<ri;if(mode==0){tx=.5f;ty=.985f;}else if(mode==4&&random.nextFloat()<dt*.1f){curiosity=clamp(curiosity+(random.nextFloat()-.5f)*.03f,.2f,1);tx=.05f+random.nextFloat()*.9f;ty=.05f+random.nextFloat()*.9f;}else if(mode!=2&&(random.nextFloat()<dt*(.16f+curiosity*.12f)||Math.hypot(tx-fx,ty-fy)<.035f)){if(hunger>.55f){for(Room rm:rooms)if(rm.type==1){tx=(rm.x+.55f)/cols;ty=(rm.y+.65f)/rows;break;}}else{float bx=fx,by=fy;for(int n=0;n<8;n++){float x=.04f+random.nextFloat()*.92f,y=.04f+random.nextFloat()*.92f;int idx=(int)(y*rows)*cols+(int)(x*cols);if((visited&(1<<Math.min(29,idx)))==0){bx=x;by=y;break;}bx=x;by=y;}tx=bx;ty=by;}}float dx=tx-fx,dy=ty-fy,d=(float)Math.hypot(dx,dy),speed=mode==1?.13f:.2f;if(d>.005f){vx+=(dx/d*speed-vx)*Math.min(1,dt*2);vy+=(dy/d*speed-vy)*Math.min(1,dt*2);}float nx=clamp(fx+vx*dt,.025f,.975f),ny=clamp(fy+vy*dt,.025f,.975f);if(!blocked(nx,fy))fx=nx;else{vx=-vx*.5f;tx=clamp(fx+(random.nextFloat()-.5f)*.2f,.04f,.96f);}if(!blocked(fx,ny))fy=ny;else{vy=-vy*.5f;ty=clamp(fy+(random.nextFloat()-.5f)*.2f,.04f,.96f);}if(hunger>.99f){hunger=.25f;foods++;coins+=2;toast="Food found +2 coins";toastAt=now;}if(mode==0&&fy>.94f&&fx>.42f&&fx<.58f){escaped=true;escapes++;coins+=25;level++;toast="ESCAPED! +25 coins";toastAt=now;save();}if(now-lastSave>4000){save();lastSave=now;}}
+  void drawFly(Canvas c){float x=L+fx*cols*unit,y=T+fy*rows*unit,r=Math.max(4,unit*.035f);fill(c,0xbbe9f8ff);c.drawOval(new RectF(x-r*1.5f,y-r*1.5f,x-r*.1f,y-r*.2f),p);c.drawOval(new RectF(x+r*.1f,y-r*1.5f,x+r*1.5f,y-r*.2f),p);fill(c,0xff151719);c.drawOval(new RectF(x-r,y-r*.4f,x+r,y+r*.4f),p);fill(c,0xffd14b4b);c.drawCircle(x+r*.7f,y-r*.1f,r*.12f,p);if(mode==2){p.setStyle(Paint.Style.STROKE);p.setColor(0xffffd76a);p.setStrokeWidth(2);c.drawCircle(L+tx*cols*unit,T+ty*rows*unit,r*1.8f,p);p.setStyle(Paint.Style.FILL);}if(escaped){box(c,L+unit*.2f,T+unit*.8f,R-unit*.2f,T+unit*1.05f,0xee17251f);text(c,"ESCAPE SUCCESSFUL",L+unit*.3f,T+unit*.96f,unit*.07f,0xffb9f6c8);}}
+  void drawPanel(Canvas c,float panel){float x=W-panel+10,r=W-10,y=16;box(c,x,y,r,H-16,0xff172130);text(c,"FLYLIFE",x+12,y+26,H*.031f,Color.WHITE);text(c,"PROTOTYPE 0.2",x+12,y+45,H*.016f,0xff8ea1b8);text(c,"SEED "+seed,x+12,y+68,H*.017f,0xffd7e0eb);text(c,"Coins: "+coins,x+12,y+91,H*.021f,0xffffd36b);text(c,"Fly Lv."+level,x+12,y+113,H*.018f,0xffd7e0eb);float bw=r-x-24;text(c,"HUNGER",x+12,y+137,H*.014f,0xffb8c5d8);box(c,x+12,y+144,x+12+bw,y+152,0xff354255);box(c,x+12,y+144,x+12+bw*hunger,y+152,0xffe5a34a);text(c,"ENERGY",x+12,y+171,H*.014f,0xffb8c5d8);box(c,x+12,y+178,x+12+bw,y+186,0xff354255);box(c,x+12,y+178,x+12+bw*energy,y+186,0xff61c59a);float start=y+202,gap=Math.min(36,H*.064f);for(int i=0;i<modes.length;i++){float yy=start+i*gap;box(c,x+8,yy,r-8,yy+gap-4,mode==i?0xff357f7b:0xff29374a);text(c,modes[i],x+16,yy+gap*.64f,H*.017f,Color.WHITE);}float by=H*.82f,bh=H*.052f;box(c,x+8,by,r-8,by+bh,0xff384b60);text(c,"NEW HOUSE",x+16,by+bh*.66f,H*.018f,Color.WHITE);box(c,x+8,by+bh+5,r-8,by+bh*2+5,0xff384b60);text(c,paused?"RESUME":"PAUSE",x+16,by+bh*1.66f+5,H*.018f,Color.WHITE);if(SystemClock.uptimeMillis()-toastAt<2200)text(c,toast,x+10,H-27,H*.014f,0xffffd36b);}
+  @Override public boolean onTouchEvent(MotionEvent e){if(e.getAction()!=MotionEvent.ACTION_UP)return true;float x=e.getX(),y=e.getY(),panel=W*.24f;if(help){help=false;invalidate();return true;}if(x>W-panel){if(y>H*.82f&&y<H*.94f){seed=(int)(System.currentTimeMillis()^(System.nanoTime()>>>12));fx=.18f;fy=.22f;hunger=.1f;energy=1;generate();toast="New house generated";toastAt=SystemClock.uptimeMillis();}else if(y>H*.82f+H*.052f&&y<H*.95f)paused=!paused;else{float start=218,gap=Math.min(36,H*.064f);int idx=(int)((y-start)/gap);if(idx>=0&&idx<6){mode=idx;paused=false;}else help=true;}}else if(x>=L&&x<=R&&y>=T&&y<=B){if(mode==2){tx=clamp((x-L)/(R-L),.03f,.97f);ty=clamp((y-T)/(B-T),.03f,.97f);toast="Training target set";toastAt=SystemClock.uptimeMillis();}else if(paused)paused=false;else help=true;}else help=true;save();invalidate();return true;}
+ }
 }

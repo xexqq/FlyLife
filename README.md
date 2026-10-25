@@ -1,32 +1,24 @@
 # FlyLife
 
-FlyLife is an early Android prototype for the fly-life simulator concept.
+FlyLife is an offline-first Android fly-life simulator prototype, built incrementally toward one shared world with procedural buildings, fly behaviour, training, saved fly profiles, an apiary and experimental neural models.
 
-## Prototype 0.1
-- Landscape Android app, no network permission or server required.
-- One room with seed-based furniture layout.
-- Automatic fly movement (Simple AI), observer mode, training target mode, and a basic lab screen.
-- Basic coin counter and local persistence.
-- New House button changes the procedural seed.
-- GitHub Actions workflow builds a debug APK and uploads it as an artifact.
+## Prototype 0.2
+- Seed-based procedural home layouts: home, large home and mansion footprints.
+- Room types, internal wall/door gaps, exterior windows, an exit, furniture and food.
+- A fly with movement, basic furniture avoidance, exploration memory, hunger/energy and food-seeking behaviour.
+- Modes: Escape, Free Life, Training, Fly Lab, Evolution and Real Brain (experimental placeholder).
+- Local persistence for seed, mode, needs, progression, coins and basic offline coins.
+- Landscape Android Canvas game; no network/server permission required.
 
 ## Build
-Requires JDK 17, Android SDK platform 35/build-tools available, and Gradle 8.9:
-
-```bash
-gradle assembleDebug
-```
-
-APK output: `app/build/outputs/apk/debug/app-debug.apk`.
+GitHub Actions builds a debug APK on pushes to `main`/`master` and uploads it as `FlyLife-debug-apk`. Open the repository's Actions tab, select the latest successful build, and download the artifact.
 
 ## Roadmap
-1. Improve room-graph and furniture placement constraints.
-2. Add multiple connected rooms, doors, windows and floors.
-3. Add proper fly states, food-seeking and collision avoidance.
-4. Add Neural Fly with offline pretraining and persistent per-fly memory.
-5. Add save/load, achievements, cosmetics and economy.
-6. Add the offline-income apiary with timestamp-based progress calculation.
-7. Add LAN multiplayer; no dedicated online server planned.
-8. Investigate a small FlyWire-inspired experimental model.
+- 0.3: navigation graph, room-aware memory, explicit training tasks and offline neural policy.
+- 0.4: multi-floor buildings, validated furniture placement, multiple flies and robust save/load.
+- 0.5: achievements, cosmetics and settings.
+- 0.6: apiary with saved fly profiles and timestamp-based offline income.
+- 0.7: LAN multiplayer via Wi-Fi/hotspot and seed-based world sync.
+- 1.0: richer visuals/audio, larger buildings, model comparison and scoped FlyWire experiments.
 
-This is an initial scaffold, not the complete game described in the design document.
+Neural Fly and FlyWire are currently future/placeholder modes, not a claim that a trained neural model or complete connectome simulation already exists.
