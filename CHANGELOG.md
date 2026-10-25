@@ -1,15 +1,21 @@
 # Changelog
 
+## 1.1.0 — Camera and organic flight update
+
+- Added pinch-to-zoom, two-finger pan, one-finger pan while zoomed and a camera reset control.
+- Enlarged the rendered fly and improved room depth with bevelled floor edges, contact shadows and raised furniture faces.
+- Reduced flight speed and added turning inertia, gentle lateral drift and periodic heading variation to avoid ruler-straight motion.
+- Changed exploration target scoring so agents are less biased toward the shortest nearby destination.
+- Escape mode now explores first and only heads for the exit after discovering it.
+- Real Brain now holds its food target longer, makes decisions less frequently, prioritizes food at higher hunger and restores more hunger on eating.
+- Updated Android version metadata to 1.1.0.
+
 ## 1.0.0 — First complete offline release
 
-- Rebuilt the room-and-furniture generator around deterministic seeds and checked navigation cells.
-- Added grid-aligned food and AI targets to prevent flies getting stuck when a target fell inside a blocked navigation cell.
-- Added collision-aware BFS routes, automatic recovery targets, and tests across 200 seeds and 600 cross-room routes.
-- Polished the Canvas renderer with distinct rooms, floor materials, room-specific furniture, windows, window light pools, animated wings, wing veins, six legs, compound eyes, antennae and skin-specific markings.
-- Added 12 cosmetic skins, an expanded four-column achievement view, individual apiary profiles, rename/recall/release controls and capped offline income.
-- Fixed first-flight achievement timing, post-escape mode switching, saved-position recovery, back-button navigation and apiary timing while menus are open.
-- Added version metadata, app icon, build workflow and a no-Android-SDK procedural-world test.
+- Deterministic seeded houses, furniture placement, collision checks and room navigation.
+- Animated fly, twelve cosmetic skins, needs, experience, achievements, six modes and persistent apiary profiles.
+- Offline income, save system, Android icon and GitHub Actions build workflow.
 
 ### Deliberate limits
 
-This version is a 2D offline release. Multiplayer, multi-floor houses, audio, trained neural-network weights and the real FlyWire connectome are not included. The `Real Brain` mode is a labelled educational sensory/motor model, not a claim that connectome data has been integrated.
+The renderer is 2.5D-style Android Canvas, not a full 3D engine. Multiplayer, multi-floor houses, sound, trained neural-network weights and the real FlyWire connectome are not included. `Real Brain` is an educational sensory/motor model, not integrated connectome data.

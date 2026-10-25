@@ -100,6 +100,17 @@ public class MainActivity extends Activity {
         private int brainPulse=0; private long lastBrainPulse=0;
         private float W,H, mapL,mapT,mapR,mapB,cell,houseW,houseH;
         private float wingPhase=0, elapsed=0;
+        // Camera controls: pinch to zoom, two-finger pan, and one-finger pan while zoomed in.
+        private float cameraZoom=1.0f, cameraPanX=0f, cameraPanY=0f;
+        private float downX, downY, lastTouchX, lastTouchY, pinchStartDistance, pinchStartZoom;
+        private long lastTapTime=0;
+        private boolean cameraDragging=false, multiTouchGesture=false;
+        private float heading=0f, wanderPhase=0f;
+        private long nextWanderChange=0, nextDetourCheck=0;
+        private boolean detourActive=false;
+        private float detourX=.5f, detourY=.5f;
+        private long detourUntil=0;
+        private boolean exitKnown=false;
         private boolean routeCached=false; private int navStartCell=-1,navGoalCell=-1; private long navTargetSignature=Long.MIN_VALUE; private float navWaypointX=.5f,navWaypointY=.5f; private final float[] navPoint={.5f,.5f};
         private float lastFoodX=-1,lastFoodY=-1;
         private int lastRoom=-1;
@@ -152,12 +163,12 @@ public class MainActivity extends Activity {
         private void checkAchievements(){if(totalMeals>0)unlock(1);if(escapes>0)unlock(2);if(apiary.size()>0)unlock(3);if(trainingTasks>0)unlock(4);if(apiary.size()>=3)unlock(5);if(Integer.bitCount(runVisited)>=4)unlock(6);if(world!=null&&Integer.bitCount(runVisited)>=world.rooms.length)unlock(7);if(totalMeals>=10)unlock(8);if(fly.level>=5)unlock(9);if(fly.level>=3&&mode==MODE_EVOLUTION)unlock(10);if(Integer.bitCount(skinMask)>=3)unlock(11);if(worldsSeen>=3)unlock(12);}
         private void gainXp(int n){int old=fly.level;fly.xp+=n;fly.level=1+fly.xp/35;if(fly.level>old){notifyUser("Новый уровень мухи: "+fly.level+"!");if(mode==MODE_EVOLUTION&&SystemClock.uptimeMillis()-lastEvolution>2000){lastEvolution=SystemClock.uptimeMillis();fly.curiosity=clamp(fly.curiosity+(random.nextFloat()-.35f)*.08f,.18f,1f);fly.speedGene=clamp(fly.speedGene+(random.nextFloat()-.45f)*.05f,.25f,1f);fly.caution=clamp(fly.caution+(random.nextFloat()-.5f)*.04f,.15f,.9f);}}dirty=true;checkAchievements();}
 
-        private void newWorld(long nextSeed){boolean changed=seed!=nextSeed;seed=nextSeed;world=WorldModel.generate(seed);spawnAtStart();invalidateRoute();hunger=Math.max(.08f,hunger);energy=Math.max(.4f,energy);runVisited=0;fly.visitedMask=0;fly.worldSeedHash=(int)(seed^(seed>>>32));escaped=false;targetActive=false;paused=false;lastRoom=-1;lastDecision=0;if(changed)worldsSeen++;reward(0,"Новый мир с seed "+seed);checkAchievements();persist();}
+        private void newWorld(long nextSeed){boolean changed=seed!=nextSeed;seed=nextSeed;cameraZoom=1f;cameraPanX=cameraPanY=0f;exitKnown=false;detourActive=false;world=WorldModel.generate(seed);spawnAtStart();invalidateRoute();hunger=Math.max(.08f,hunger);energy=Math.max(.4f,energy);runVisited=0;fly.visitedMask=0;fly.worldSeedHash=(int)(seed^(seed>>>32));escaped=false;targetActive=false;paused=false;lastRoom=-1;lastDecision=0;if(changed)worldsSeen++;reward(0,"Новый мир с seed "+seed);checkAchievements();persist();}
         private void chooseFoodTarget(){WorldModel.Food best=null;float bd=Float.MAX_VALUE;for(WorldModel.Food f:world.food)if(f.active){float d=dist(fx,fy,f.x,f.y);if(d<bd){bd=d;best=f;}}if(best!=null){tx=best.x;ty=best.y;flyState="Чует запах еды";}else chooseExploreTarget();}
         private float dist(float x1,float y1,float x2,float y2){return (float)Math.hypot(x1-x2,y1-y2);}
         private void chooseExploreTarget(){
             int current=world.roomAt(fx,fy), best=-1;float bestScore=-999f;
-            for(WorldModel.Room r:world.rooms){int idx=r.index(world.cols);float score=0;boolean visited=(runVisited&(1<<idx))!=0;score += visited?-1.0f:3.4f;score-=Math.abs(r.x-current%world.cols)*.52f+Math.abs(r.y-current/world.cols)*.52f;score+=random.nextFloat()*fly.curiosity*.9f;if(r.type==WorldModel.KITCHEN&&hunger>.28f)score+=.6f;if(r.type==WorldModel.BEDROOM&&energy<.25f)score+=.9f;if(score>bestScore){bestScore=score;best=idx;}}
+            for(WorldModel.Room r:world.rooms){int idx=r.index(world.cols);float score=0;boolean visited=(runVisited&(1<<idx))!=0;score += visited?-0.65f:2.3f;score-=Math.abs(r.x-current%world.cols)*.30f+Math.abs(r.y-current/world.cols)*.30f;score+=random.nextFloat()*(.9f+fly.curiosity*1.25f);if(r.type==WorldModel.KITCHEN&&hunger>.28f)score+=.6f;if(r.type==WorldModel.BEDROOM&&energy<.25f)score+=.9f;if(score>bestScore){bestScore=score;best=idx;}}
             if(best<0)best=random.nextInt(world.rooms.length);WorldModel.Room r=world.rooms[best];float[] spot=world.randomOpenSpot(r.x,r.y,.30f,.75f);tx=spot[0];ty=spot[1];flyState=(runVisited&(1<<best))==0?"Изучает новую комнату":"Исследует дом";
         }
         private void chooseRestTarget(){int idx=0;for(WorldModel.Room r:world.rooms)if(r.type==WorldModel.BEDROOM){idx=r.index(world.cols);break;}WorldModel.Room r=world.rooms[idx];float[] spot=world.randomOpenSpot(r.x,r.y,.55f,.85f);tx=spot[0];ty=spot[1];flyState="Отдыхает";}
@@ -173,14 +184,30 @@ public class MainActivity extends Activity {
             float[] goal=world.resolveTarget(lx,ly);tx=goal[0];ty=goal[1];flyState="Летит к свету у окна";
         }
         private void updateAutoTarget(long now){
-            if(mode==MODE_ESCAPE){tx=.5f;ty=1.025f;flyState="Ищет выход";return;}
+            if(mode==MODE_ESCAPE){
+                if(!exitKnown){
+                    if(fy>.79f && Math.abs(fx-.5f)<.34f){exitKnown=true;notifyUser("Муха заметила выход и запомнила его расположение");lastDecision=0;}
+                    else if(now-lastDecision>5200 || dist(fx,fy,tx,ty)<.035f){chooseExploreTarget();lastDecision=now;}
+                    flyState="Исследует дом в поисках выхода";
+                }else{tx=.5f;ty=1.025f;flyState="Возвращается к замеченному выходу";}
+                return;
+            }
             if(mode==MODE_TRAIN){if(!targetActive)flyState="Ждёт учебную цель";return;}
             if(mode==MODE_LAB){if(targetActive)flyState="Идёт к цели";else flyState="Fly Lab: жди команды";return;}
             if(mode==MODE_BRAIN){
-                if(now-lastBrainPulse>240){brainPulse=(brainPulse+1)%4;lastBrainPulse=now;}
-                float odor=0;for(WorldModel.Food f:world.food)if(f.active){float d=dist(fx,fy,f.x,f.y);odor=Math.max(odor,clamp(.7f-d*2.5f,0,1));}
-                float foodDrive=hunger*.72f+odor*.58f;float exploreDrive=fly.curiosity*.50f;float restDrive=(1f-energy)*.62f;
-                if(now-lastDecision>900||dist(fx,fy,tx,ty)<.025f){if(foodDrive>exploreDrive&&foodDrive>restDrive&&hunger>.28f)chooseFoodTarget();else if(restDrive>.70f&&energy<.24f)chooseRestTarget();else if(fly.curiosity>.62f&&energy>.4f&&random.nextFloat()<.30f)chooseLightTarget();else chooseExploreTarget();lastDecision=now;}
+                if(now-lastBrainPulse>520){brainPulse=(brainPulse+1)%4;lastBrainPulse=now;}
+                float odor=0;for(WorldModel.Food f:world.food)if(f.active){float d=dist(fx,fy,f.x,f.y);odor=Math.max(odor,clamp(.8f-d*3.0f,0,1));}
+                float foodDrive=hunger*.88f+odor*.68f;float exploreDrive=fly.curiosity*.34f;float restDrive=(1f-energy)*.72f;
+                // Brain decisions have inertia: keep pursuing food instead of switching goals every second.
+                boolean foodTargetActive="Чует запах еды".equals(flyState)||"Ищет пищу".equals(flyState);
+                if(foodTargetActive && hunger>.12f && hasActiveFoodTarget() && dist(fx,fy,tx,ty)>.035f)return;
+                if(now-lastDecision>5200+random.nextInt(2800)||dist(fx,fy,tx,ty)<.035f){
+                    if(hunger>.24f && (foodDrive>exploreDrive || hunger>.58f))chooseFoodTarget();
+                    else if(restDrive>.62f&&energy<.28f)chooseRestTarget();
+                    else if(fly.curiosity>.62f&&energy>.4f&&random.nextFloat()<.20f)chooseLightTarget();
+                    else chooseExploreTarget();
+                    lastDecision=now;
+                }
                 return;
             }
             boolean targetReached=dist(fx,fy,tx,ty)<.024f;
@@ -189,8 +216,24 @@ public class MainActivity extends Activity {
             if(now-lastDecision>1800 || targetReached || (hunger>.35f&&foodNearby())){if(hunger>.34f&&foodNearby())chooseFoodTarget();else if(energy<.14f)chooseRestTarget();else if(fly.curiosity>.58f&&energy>.38f&&random.nextFloat()<.24f)chooseLightTarget();else chooseExploreTarget();lastDecision=now;}
         }
         private boolean foodNearby(){for(WorldModel.Food f:world.food)if(f.active&&dist(fx,fy,f.x,f.y)<.24f)return true;return false;}
+        private boolean hasActiveFoodTarget(){for(WorldModel.Food f:world.food)if(f.active&&dist(tx,ty,f.x,f.y)<.012f)return true;return false;}
         private void invalidateRoute(){routeCached=false;}
         private float[] cachedWaypoint(){
+            long now=SystemClock.uptimeMillis();
+            if(detourActive && (now>=detourUntil || dist(fx,fy,detourX,detourY)<.028f))detourActive=false;
+            if(detourActive){navPoint[0]=detourX;navPoint[1]=detourY;return navPoint;}
+            if(now>=nextDetourCheck){
+                nextDetourCheck=now+1200+random.nextInt(2400);
+                float chance=(mode==MODE_TRAIN||mode==MODE_LAB)?.62f:(mode==MODE_ESCAPE?.22f:.34f);
+                if(random.nextFloat()<chance && dist(fx,fy,tx,ty)>.13f){
+                    int roomIndex=world.roomAt(fx,fy);WorldModel.Room rr=world.rooms[roomIndex];
+                    float[] detour=world.randomOpenSpot(rr.x,rr.y,.20f,.80f);
+                    if(dist(fx,fy,detour[0],detour[1])>.055f && dist(tx,ty,detour[0],detour[1])>.075f){
+                        detourX=detour[0];detourY=detour[1];detourUntil=now+1700+random.nextInt(2800);detourActive=true;
+                        navPoint[0]=detourX;navPoint[1]=detourY;return navPoint;
+                    }
+                }
+            }
             int gridW=world.cols*WorldModel.GRID,gridH=world.rows*WorldModel.GRID;
             int sx=Math.max(0,Math.min(gridW-1,(int)(fx*gridW)));
             int sy=Math.max(0,Math.min(gridH,(int)(fy*gridH)));
@@ -209,15 +252,32 @@ public class MainActivity extends Activity {
             int room=world.roomAt(fx,fy);if(room!=lastRoom){int bit=1<<room;if((runVisited&bit)==0){runVisited|=bit;fly.visitedMask=runVisited;gainXp(2);coins+=1;notifyUser("Новая комната: "+WorldModel.ROOM_NAMES[world.rooms[room].type]+" · +1 монета");if(Integer.bitCount(runVisited)>=4)unlock(6);if(Integer.bitCount(runVisited)>=world.rooms.length)unlock(7);}lastRoom=room;dirty=true;}
             updateAutoTarget(now);
             float[] wp=cachedWaypoint();float dx=wp[0]-fx,dy=wp[1]-fy,d=dist(fx,fy,wp[0],wp[1]);
-            float traitSpeed=fly.trait==2?.035f:(fly.trait==3?.045f:(fly.trait==1?-.025f:(fly.trait==4?-.035f:0f)));float baseSpeed=.18f+fly.speedGene*.10f+traitSpeed;float speed=baseSpeed*(.78f+energy*.22f)*(1f-fly.caution*.055f);if(mode==MODE_TRAIN)speed*=1.08f;if(mode==MODE_ESCAPE)speed*=1.05f;if(mode==MODE_LAB)speed*=1.2f;if(mode==MODE_BRAIN)speed*=.94f;
-            if(d>.004f){float step=Math.min(d,speed*dt);float nx=fx+dx/d*step,ny=fy+dy/d*step;boolean moved=false;
+            float traitSpeed=fly.trait==2?.009f:(fly.trait==3?.014f:(fly.trait==1?-.008f:(fly.trait==4?-.010f:0f)));
+            // Much slower flight, with inertia and small heading changes instead of robotic straight lines.
+            float baseSpeed=.070f+fly.speedGene*.035f+traitSpeed;
+            float speed=baseSpeed*(.72f+energy*.28f)*(1f-fly.caution*.12f);
+            if(mode==MODE_TRAIN)speed*=.90f;if(mode==MODE_ESCAPE)speed*=.88f;if(mode==MODE_LAB)speed*=.92f;if(mode==MODE_BRAIN)speed*=.82f;
+            if(now>=nextWanderChange){wanderPhase+=random.nextFloat()*2.4f-1.2f;nextWanderChange=now+900+random.nextInt(1900);}
+            if(d>.004f){
+                float desired=(float)Math.atan2(dy,dx);
+                float wander=(float)Math.sin(elapsed*1.13f+wanderPhase)*.22f+(float)Math.sin(elapsed*.47f+wanderPhase*1.7f)*.13f;
+                desired+=wander;
+                float current=(float)Math.atan2(vy,vx);if(Math.hypot(vx,vy)<.006f)current=heading;
+                float diff=(float)Math.atan2(Math.sin(desired-current),Math.cos(desired-current));
+                float turn=Math.max(-1.05f*dt,Math.min(1.05f*dt,diff));heading=current+turn;
+                float step=Math.min(d,speed*dt);float nx=fx+(float)Math.cos(heading)*step,ny=fy+(float)Math.sin(heading)*step;
+                // A little lateral drift creates imperfect, living flight; navigation still prevents wall crossing.
+                float lateral=(float)Math.sin(elapsed*1.8f+wanderPhase)*.012f*dt;
+                nx+=(float)-Math.sin(heading)*lateral;ny+=(float)Math.cos(heading)*lateral;
+                boolean moved=false;
                 if(world.canMove(fx,fy,nx,ny)){fx=nx;fy=ny;moved=true;}
-                else if(world.canMove(fx,fy,nx,fy)){fx=nx;moved=true;}
-                else if(world.canMove(fx,fy,fx,ny)){fy=ny;moved=true;}
-                if(!moved){vx=vy=0;lastDecision=0;invalidateRoute();}else{vx=dx/d*speed;vy=dy/d*speed;unlock(0);}
-            }else{vx=vy=0;}
-            for(WorldModel.Food f:world.food)if(f.active&&dist(fx,fy,f.x,f.y)<.028f){f.active=false;f.respawnAt=now+6500+random.nextInt(6000);hunger=Math.max(0,hunger-.68f);energy=Math.min(1f,energy+.16f);fly.meals++;totalMeals++;gainXp(5);reward(3,"Еда найдена и съедена · +3 монеты");if(totalMeals>=10)unlock(8);dirty=true;break;}
-            if(mode==MODE_ESCAPE&&fy>=1.0f&&Math.abs(fx-.5f)<.13f){escaped=true;escapes++;fly.escapes++;gainXp(25);levelToast();reward(35,"ПОБЕГ УДАЛСЯ! +35 монет");unlock(2);persist();}
+                else if(world.canMove(fx,fy,nx,fy)){fx=nx;moved=true;heading+=(random.nextBoolean()?1:-1)*.28f;}
+                else if(world.canMove(fx,fy,fx,ny)){fy=ny;moved=true;heading+=(random.nextBoolean()?1:-1)*.28f;}
+                if(!moved){vx=vy=0;heading+=random.nextFloat()-.5f;lastDecision=0;invalidateRoute();}
+                else{vx=(float)Math.cos(heading)*speed;vy=(float)Math.sin(heading)*speed;unlock(0);}
+            }else{vx*=.86f;vy*=.86f;}
+            for(WorldModel.Food f:world.food)if(f.active&&dist(fx,fy,f.x,f.y)<.028f){f.active=false;f.respawnAt=now+6500+random.nextInt(6000);hunger=Math.max(0,hunger-(mode==MODE_BRAIN?.94f:.78f));energy=Math.min(1f,energy+.22f);fly.meals++;totalMeals++;gainXp(5);reward(3,"Еда найдена и съедена · +3 монеты");if(totalMeals>=10)unlock(8);dirty=true;break;}
+            if(mode==MODE_ESCAPE&&exitKnown&&fy>=1.0f&&Math.abs(fx-.5f)<.13f){escaped=true;escapes++;fly.escapes++;gainXp(25);levelToast();reward(35,"ПОБЕГ УДАЛСЯ! +35 монет");unlock(2);persist();}
             if(mode==MODE_TRAIN&&targetActive&&dist(fx,fy,targetMarkerX,targetMarkerY)<.035f){targetActive=false;trainingTasks++;gainXp(8);reward(8,"Цель достигнута · +8 монет");if(trainingTasks>0)unlock(4);persist();}
             if(mode==MODE_LAB&&targetActive&&dist(fx,fy,targetMarkerX,targetMarkerY)<.035f)targetActive=false;
             if(mode==MODE_EVOLUTION&&fly.level>=3)unlock(10);
@@ -239,7 +299,11 @@ public class MainActivity extends Activity {
             if(screen==2){drawAchievements(canvas);postInvalidateDelayed(100);return;}
             if(screen==3){drawSettings(canvas);postInvalidateDelayed(100);return;}
             if(screen==4){drawGuide(canvas);postInvalidateDelayed(100);return;}
-            layoutWorld();updateWorld(dt,now);drawBackdrop(canvas);drawWorld(canvas);drawFood(canvas);drawFly(canvas);drawWorldHeader(canvas);drawPanel(canvas);
+            layoutWorld();updateWorld(dt,now);drawBackdrop(canvas);
+            float camCx=(mapL+mapR)*.5f,camCy=(mapT+mapB)*.5f;
+            canvas.save();canvas.translate(camCx+cameraPanX,camCy+cameraPanY);canvas.scale(cameraZoom,cameraZoom);canvas.translate(-camCx,-camCy);
+            drawWorld(canvas);drawFood(canvas);drawFly(canvas);canvas.restore();
+            drawWorldHeader(canvas);drawPanel(canvas);
             if(showHelp)drawHelpOverlay(canvas);if(mode==MODE_BRAIN&&showBrainPanel)drawBrainOverlay(canvas);if(escaped)drawEscapeOverlay(canvas);
             if(toastAt>0&&now-toastAt<3000)drawToast(canvas,toast);postInvalidateDelayed(16);
         }
@@ -263,7 +327,10 @@ public class MainActivity extends Activity {
         private void drawWorld(Canvas c){
             // House shadow, dark exterior shell, floorboards and subtle room-specific materials.
             bgRect(c,mapL-9,mapT-9,mapR+9,mapB+9,0x88000000,12);bgRect(c,mapL-6,mapT-6,mapR+6,mapB+6,0xff3f4a53,7);rect(c,mapL,mapT,mapR,mapB,0xff675747);
-            for(WorldModel.Room room:world.rooms){float l=mapL+room.x*cell,t=mapT+room.y*cell,r=l+cell,b=t+cell;int fc=floorColor(room.type);rect(c,l+2,t+2,r-2,b-2,fc);
+            for(WorldModel.Room room:world.rooms){float l=mapL+room.x*cell,t=mapT+room.y*cell,r=l+cell,b=t+cell;int fc=floorColor(room.type);
+                // Bevelled floor tiles and ambient contact shading give the top-down scene a 2.5D miniature-room look.
+                bgRect(c,l+1,t+1,r-1,b-1,0xff3b3028,2);rect(c,l+3,t+3,r-3,b-3,fc);
+                line(c,l+4,t+4,r-4,t+4,0x55ffffff,Math.max(1,cell*.012f));line(c,l+4,t+4,l+4,b-4,0x33ffffff,Math.max(1,cell*.01f));line(c,l+4,b-4,r-4,b-4,0x33251a13,Math.max(1,cell*.012f));
                 // Floorboard seams and alternating boards give the flat map a designed, tactile look.
                 for(int row=0;row<7;row++){float yy=t+cell*(.08f+row*.125f);line(c,l+4,yy,r-4,yy,(row%2==0?0x27705a43:0x1cffffff),1.2f);float seam=l+cell*(.12f+(row%3)*.27f);line(c,seam,yy- cell*.06f,seam,yy+cell*.045f,0x17624c3c,1f);}
                 for(int i=0;i<5;i++)line(c,l+cell*i*.2f,t+3,l+cell*i*.2f,b-3,0x0effffff,.8f);
@@ -299,7 +366,11 @@ public class MainActivity extends Activity {
         private void drawFurniture(Canvas c,WorldModel.Furniture f){
             float l=mapL+(f.roomX+f.x)*cell,t=mapT+(f.roomY+f.y)*cell,r=l+f.w*cell,b=t+f.h*cell,w=r-l,h=b-t;
             // Contact shadow is offset and separate from the object body.
-            if(f.solid)bgRect(c,l+2,t+3,r+3,b+4,0x35000000,Math.max(3,cell*.025f));
+            if(f.solid){
+                bgRect(c,l+2,t+cell*.055f,r+cell*.025f,b+cell*.075f,0x4a000000,Math.max(3,cell*.025f));
+                // Dark lower face is a deliberate fake extrusion; furniture reads as raised objects rather than flat icons.
+                bgRect(c,l+cell*.025f,t+h*.12f,r+cell*.025f,b+cell*.075f,0x66433125,Math.max(2,cell*.018f));
+            }
             switch(f.type){
                 case WorldModel.SOFA:
                     bgRect(c,l,t+h*.18f,r,b,0xff5d514c,Math.max(3,h*.13f));bgRect(c,l+2,t+2,r-2,b-h*.12f,0xff648b86,Math.max(3,h*.16f));bgRect(c,l+w*.06f,t+h*.24f,l+w*.30f,b-h*.18f,0xff81aaa3,3);bgRect(c,l+w*.35f,t+h*.24f,l+w*.64f,b-h*.18f,0xff729a94,3);bgRect(c,l+w*.69f,t+h*.24f,r-w*.06f,b-h*.18f,0xff81aaa3,3);line(c,l+w*.32f,t+h*.24f,l+w*.32f,b-h*.18f,0x80617770,1);line(c,l+w*.66f,t+h*.24f,l+w*.66f,b-h*.18f,0x80617770,1);break;
@@ -341,7 +412,7 @@ public class MainActivity extends Activity {
         }
         private void drawFood(Canvas c){for(WorldModel.Food f:world.food)if(f.active){float x=px(f.x),y=py(f.y),r=Math.max(4,cell*.035f);oval(c,x-r*1.25f,y-r*.20f,x+r*1.15f,y+r*.60f,0x40000000);oval(c,x-r,y-r*.45f,x+r,y+r*.42f,0xffd5794c);oval(c,x-r*.65f,y-r*.30f,x+r*.52f,y+r*.15f,0xfff0b16b);circle(c,x-r*.28f,y-r*.26f,r*.12f,0xffffe3a6);line(c,x+r*.4f,y-r*.45f,x+r*.7f,y-r*.85f,0xff63915a,Math.max(1.2f,cell*.008f));}}
         private void drawFly(Canvas c){
-            float x=px(fx),y=py(fy);Skin s=SKINS[fly.skin];float r=Math.max(7f,cell*.065f);float angle=(float)Math.toDegrees(Math.atan2(vy,vx));if(Math.abs(vx)+Math.abs(vy)<.001f)angle=0;
+            float x=px(fx),y=py(fy);Skin s=SKINS[fly.skin];float r=Math.max(10f,cell*.105f);float angle=(float)Math.toDegrees(Math.atan2(vy,vx));if(Math.abs(vx)+Math.abs(vy)<.001f)angle=0;
             // Drop shadow and animated translucent wings.
             oval(c,x-r*1.7f,y+r*.30f,x+r*1.4f,y+r*.88f,0x55000000);
             c.save();c.translate(x,y);c.rotate(angle);float flap=(float)Math.sin(wingPhase)*r*.22f;
@@ -364,7 +435,7 @@ public class MainActivity extends Activity {
             // Memory cloud: the visited-room count is tied to real room entries.
             if(cell>100){float cx=x,cy=y-r*2.15f;circle(c,cx,cy,r*.20f,0x8870d5b2);circle(c,cx-r*.24f,cy+r*.10f,r*.11f,0x886fe4bf);}
         }
-        private void drawWorldHeader(Canvas c){bgRect(c,W*.034f,H*.045f,W*.697f,H*.125f,0xe51e2b3b,10);text(c,"FLYLIFE",W*.052f,H*.081f,H*.028f,textColor);text(c,"1.0 RELEASE  ·  2D LIFE SIM",W*.052f,H*.105f,H*.0135f,mint);String house=HOUSE_NAMES[world.houseType];text(c,house,W*.27f,H*.077f,H*.019f,gold);fitText(c,"SEED  "+seed,W*.27f,H*.104f,W*.30f,H*.015f,muted);float val=W*.60f;centerText(c,"КОМНАТЫ",val,H*.073f,H*.012f,muted);centerText(c,Integer.bitCount(runVisited)+" / "+world.rooms.length,val,H*.104f,H*.022f,mint);}
+        private void drawWorldHeader(Canvas c){bgRect(c,W*.034f,H*.045f,W*.697f,H*.125f,0xe51e2b3b,10);text(c,"FLYLIFE",W*.052f,H*.081f,H*.028f,textColor);text(c,"1.1 CAMERA · 2.5D · PINCH TO ZOOM",W*.052f,H*.105f,H*.0135f,mint);String house=HOUSE_NAMES[world.houseType];text(c,house,W*.27f,H*.077f,H*.019f,gold);fitText(c,"SEED  "+seed,W*.27f,H*.104f,W*.27f,H*.015f,muted);float val=W*.60f;centerText(c,"КОМНАТЫ",val,H*.073f,H*.012f,muted);centerText(c,Integer.bitCount(runVisited)+" / "+world.rooms.length,val,H*.104f,H*.022f,mint);bgRect(c,W*.668f,H*.051f,W*.700f,H*.119f,0xff34495d,7);centerText(c,"↺",W*.684f,H*.096f,H*.027f,gold);}
         private void drawPanel(Canvas c){float l=W*.738f,r=W*.976f,w=r-l;bgRect(c,l,H*.04f,r,H*.145f,0xff202e3f,10);text(c,"МОЯ МУХА",l+w*.06f,H*.075f,H*.020f,textColor);fitText(c,fly.name+"  ·  Ур. "+fly.level,l+w*.06f,H*.106f,w*.88f,H*.017f,gold);fitText(c,"XP "+fly.xp+"   ·   "+traitName(fly.trait),l+w*.06f,H*.131f,w*.88f,H*.014f,muted);
             text(c,"МОНЕТЫ  "+coins,l+w*.05f,H*.177f,H*.018f,gold);text(c,"ГОЛОД",l+w*.05f,H*.204f,H*.012f,muted);drawBar(c,l+w*.37f,H*.191f,w*.57f,H*.018f,hunger,0xffe6a25e);text(c,"ЭНЕРГИЯ",l+w*.05f,H*.235f,H*.012f,muted);drawBar(c,l+w*.37f,H*.222f,w*.57f,H*.018f,energy,0xff68cda5);
             float start=H*.267f,bh=H*.0505f,gap=H*.0095f;
@@ -397,7 +468,7 @@ public class MainActivity extends Activity {
             float y=H*.37f,h=H*.075f;button(c,"ВВЕСТИ SEED",W*.055f,y,W*.205f,h);button(c,"СЛУЧАЙНЫЙ МИР",W*.28f,y,W*.22f,h);button(c,"СБРОСИТЬ НУЖДЫ",W*.52f,y,W*.21f,h);button(c,"СБРОСИТЬ СОХРАНЕНИЕ",W*.75f,y,W*.195f,h);
             bgRect(c,W*.055f,H*.49f,W*.945f,H*.73f,0xff222f40,12);text(c,"ПАРАМЕТРЫ МУХИ",W*.08f,H*.54f,H*.025f,textColor);text(c,"Любопытство",W*.08f,H*.59f,H*.016f,muted);drawBar(c,W*.27f,H*.572f,W*.22f,H*.023f,fly.curiosity,mint);text(c,"Осторожность",W*.55f,H*.59f,H*.016f,muted);drawBar(c,W*.73f,H*.572f,W*.16f,H*.023f,fly.caution,gold);text(c,"Ген скорости",W*.08f,H*.65f,H*.016f,muted);drawBar(c,W*.27f,H*.632f,W*.22f,H*.023f,fly.speedGene,0xff7bc6ef);text(c,"Энергия",W*.55f,H*.65f,H*.016f,muted);drawBar(c,W*.73f,H*.632f,W*.16f,H*.023f,energy,0xff7bc6ef);text(c,"FlyWire не подключён: Real Brain показывает учебную сенсомоторную модель.",W*.08f,H*.70f,H*.014f,gold);
             text(c,"Всего еды: "+totalMeals+"   Побеги: "+escapes+"   Учебные цели: "+trainingTasks+"   Миры: "+worldsSeen,W*.06f,H*.80f,H*.018f,muted);button(c,"НАЗАД",W*.055f,H*.85f,W*.18f,H*.075f);button(c,"СПРАВКА",W*.26f,H*.85f,W*.18f,H*.075f);button(c,"СОХРАНИТЬ",W*.465f,H*.85f,W*.20f,H*.075f);}
-        private void drawGuide(Canvas c){c.drawColor(bg);bgRect(c,W*.025f,H*.035f,W*.975f,H*.965f,0xff192433,18);text(c,"FLYLIFE 1.0 · ПОЛЕВОЙ СПРАВОЧНИК",W*.055f,H*.10f,H*.04f,textColor);String[] lines={"01  ОДИН ОБЩИЙ МИР","Дом, муха, опыт, монеты, скины и пасека работают вместе.","02  ГЕНЕРАЦИЯ SEED","Введите seed в настройках, чтобы точно восстановить планировку.","03  ПОВЕДЕНИЕ","Муха ищет пищу по реальному расстоянию, избегает мебели и планирует путь по проходам.","04  ОБУЧЕНИЕ И FLY LAB","Касание задаёт цель; агент прокладывает путь по сетке проходимости.","05  ЭВОЛЮЦИЯ И REAL BRAIN","Опыт меняет параметры поведения. Real Brain — объяснимая упрощённая модель, не настоящий connectome.","06  ПАСЕКА","Сохраняй до 12 мух. Их индивидуальные навыки, характер, уровень и кожа сохраняются.","07  ОГРАНИЧЕНИЯ РЕЛИЗА","Это самостоятельный 2D-релиз; мультиплеер, 3D и реальная модель FlyWire не входят в 1.0."};float y=H*.17f;for(int i=0;i<lines.length;i++){text(c,lines[i],W*.065f,y,H*(i%2==0?.020f:.016f),i%2==0?gold:0xffd1dcea);y+=H*(i%2==0?.037f:.050f);}button(c,"НАЗАД",W*.79f,H*.86f,W*.15f,H*.07f);}
+        private void drawGuide(Canvas c){c.drawColor(bg);bgRect(c,W*.025f,H*.035f,W*.975f,H*.965f,0xff192433,18);text(c,"FLYLIFE 1.0 · ПОЛЕВОЙ СПРАВОЧНИК",W*.055f,H*.10f,H*.04f,textColor);String[] lines={"01  ОДИН ОБЩИЙ МИР","Дом, муха, опыт, монеты, скины и пасека работают вместе.","02  ГЕНЕРАЦИЯ SEED","Введите seed в настройках, чтобы точно восстановить планировку.","03  ПОВЕДЕНИЕ","Муха ищет пищу по реальному расстоянию, избегает мебели и планирует путь по проходам.","04  ОБУЧЕНИЕ И FLY LAB","Касание задаёт цель; агент прокладывает путь по сетке проходимости.","05  ЭВОЛЮЦИЯ И REAL BRAIN","Опыт меняет параметры поведения. Real Brain — объяснимая упрощённая модель, не настоящий connectome.","06  ПАСЕКА","Сохраняй до 12 мух. Их индивидуальные навыки, характер, уровень и кожа сохраняются.","07  КАМЕРА И ПОЛЁТ","Щипок двумя пальцами — масштаб; двигай двумя пальцами, чтобы сместить камеру. Полёт намеренно медленный и неровный."};float y=H*.17f;for(int i=0;i<lines.length;i++){text(c,lines[i],W*.065f,y,H*(i%2==0?.020f:.016f),i%2==0?gold:0xffd1dcea);y+=H*(i%2==0?.037f:.050f);}button(c,"НАЗАД",W*.79f,H*.86f,W*.15f,H*.07f);}
         private void button(Canvas c,String s,float x,float y,float w,float h){bgRect(c,x,y,x+w,y+h,0xff34485e,8);strokeRect(c,x,y,x+w,y+h,0xff455d73,1,8);fitText(c,s,x+Math.max(7,w*.06f),y+h*.64f,w-Math.max(14,w*.12f),H*.016f,textColor);}
 
         private void saveFly(){if(apiary.size()>=12){notifyUser("Пасека заполнена (12 мух)");return;}FlyProfile f=fly.copy();String base=fly.name.replaceFirst("\\s+\\d{2}$", "").trim();if(base.isEmpty())base=fly.name;String candidate;int suffix=apiary.size()+1;do{candidate=base+" "+String.format(Locale.US,"%02d",suffix++);}while(apiaryNameExists(candidate));f.name=candidate;f.born=System.currentTimeMillis();f.visitedMask=runVisited;apiary.add(f);lastApiaryTick=SystemClock.uptimeMillis();unlock(3);if(apiary.size()>=3)unlock(5);persist();notifyUser("Муха "+f.name+" сохранена в пасеку");}
@@ -408,12 +479,30 @@ public class MainActivity extends Activity {
         private void showSeedDialog(){final EditText input=new EditText(MainActivity.this);input.setSingleLine(true);input.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_SIGNED);input.setHint("Например: 123456789");input.setText(Long.toString(seed));new AlertDialog.Builder(MainActivity.this).setTitle("Seed мира").setMessage("Одинаковое число воспроизводит ту же планировку.").setView(input).setNegativeButton("Отмена",null).setPositiveButton("Создать мир",(d,w)->{try{long value=Long.parseLong(input.getText().toString().trim());screen=0;newWorld(value);}catch(Exception ex){notifyUser("Некорректный seed");}invalidate();}).show();}
         private void confirmReset(){new AlertDialog.Builder(MainActivity.this).setTitle("Удалить сохранение?").setMessage("Будут удалены монеты, мухи в пасеке, скины и прогресс. Это действие нельзя отменить.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{prefs.edit().clear().apply();game=null;recreate();}).show();}
 
-        @Override public boolean onTouchEvent(MotionEvent e){if(e.getAction()!=MotionEvent.ACTION_UP)return true;float x=e.getX(),y=e.getY();if(W<=0||H<=0){W=getWidth();H=getHeight();}if(screen==1){handleApiaryTouch(x,y);invalidate();return true;}if(screen==2){handleAchievementTouch(x,y);invalidate();return true;}if(screen==3){handleSettingsTouch(x,y);invalidate();return true;}if(screen==4){screen=0;invalidate();return true;}
-            if(showHelp){showHelp=false;invalidate();return true;}if(x>W*.728f){float l=W*.738f,w=W*.238f,start=H*.267f,bh=H*.0505f,gap=H*.0095f;int idx=(int)((y-start)/(bh+gap));if(y>=start&&y<start+6*(bh+gap)&&idx>=0&&idx<6){boolean wasEscaped=escaped;mode=idx;paused=false;if(wasEscaped){escaped=false;spawnAtStart();targetActive=false;}if(mode==MODE_ESCAPE){if(escaped)spawnAtStart();escaped=false;tx=.5f;ty=1.025f;lastDecision=0;invalidateRoute();}else if(mode==MODE_TRAIN||mode==MODE_LAB){targetActive=false;flyState="Ждёт цели";}else lastDecision=0;showBrainPanel=mode==MODE_BRAIN;notifyUser(MODE_NAMES[mode]);dirty=true;persist();invalidate();return true;}
+        @Override public boolean onTouchEvent(MotionEvent e){
+            if(W<=0||H<=0){W=getWidth();H=getHeight();}
+            int action=e.getActionMasked();
+            if(screen==0 && action==MotionEvent.ACTION_DOWN){downX=lastTouchX=e.getX();downY=lastTouchY=e.getY();cameraDragging=false;multiTouchGesture=false;return true;}
+            if(screen==0 && action==MotionEvent.ACTION_POINTER_DOWN && e.getPointerCount()>=2){multiTouchGesture=true;cameraDragging=true;pinchStartDistance=touchDistance(e);pinchStartZoom=cameraZoom;lastTouchX=(e.getX(0)+e.getX(1))*.5f;lastTouchY=(e.getY(0)+e.getY(1))*.5f;return true;}
+            if(screen==0 && action==MotionEvent.ACTION_MOVE){
+                if(e.getPointerCount()>=2){multiTouchGesture=true;cameraDragging=true;float d=touchDistance(e);if(pinchStartDistance>1f)cameraZoom=clamp(pinchStartZoom*d/pinchStartDistance,1f,2.8f);float mx=(e.getX(0)+e.getX(1))*.5f,my=(e.getY(0)+e.getY(1))*.5f;cameraPanX+=mx-lastTouchX;cameraPanY+=my-lastTouchY;lastTouchX=mx;lastTouchY=my;invalidate();return true;}
+                if(cameraZoom>1.02f && (Math.abs(e.getX()-downX)+Math.abs(e.getY()-downY)>12f)){cameraDragging=true;cameraPanX+=e.getX()-lastTouchX;cameraPanY+=e.getY()-lastTouchY;lastTouchX=e.getX();lastTouchY=e.getY();invalidate();return true;}
+                return true;
+            }
+            if(action==MotionEvent.ACTION_POINTER_UP){return true;}
+            if(action==MotionEvent.ACTION_CANCEL){cameraDragging=false;multiTouchGesture=false;return true;}
+            if(action!=MotionEvent.ACTION_UP)return true;
+            if(screen==0 && (cameraDragging||multiTouchGesture)){cameraDragging=false;multiTouchGesture=false;invalidate();return true;}
+            float x=e.getX(),y=e.getY();
+            if(screen==0 && x>W*.66f && x<W*.72f && y<H*.14f){cameraZoom=1f;cameraPanX=cameraPanY=0f;invalidate();return true;}
+            if(screen==0 && x<W*.728f){float cx=(mapL+mapR)*.5f,cy=(mapT+mapB)*.5f;x=cx+(x-cx-cameraPanX)/cameraZoom;y=cy+(y-cy-cameraPanY)/cameraZoom;}
+            if(screen==1){handleApiaryTouch(x,y);invalidate();return true;}if(screen==2){handleAchievementTouch(x,y);invalidate();return true;}if(screen==3){handleSettingsTouch(x,y);invalidate();return true;}if(screen==4){screen=0;invalidate();return true;}
+            if(showHelp){showHelp=false;invalidate();return true;}if(x>W*.728f){float l=W*.738f,w=W*.238f,start=H*.267f,bh=H*.0505f,gap=H*.0095f;int idx=(int)((y-start)/(bh+gap));if(y>=start&&y<start+6*(bh+gap)&&idx>=0&&idx<6){boolean wasEscaped=escaped;mode=idx;paused=false;if(wasEscaped){escaped=false;spawnAtStart();targetActive=false;}if(mode==MODE_ESCAPE){if(escaped)spawnAtStart();escaped=false;exitKnown=false;detourActive=false;tx=.5f;ty=1.025f;lastDecision=0;invalidateRoute();}else if(mode==MODE_TRAIN||mode==MODE_LAB){targetActive=false;flyState="Ждёт цели";}else lastDecision=0;showBrainPanel=mode==MODE_BRAIN;notifyUser(MODE_NAMES[mode]);dirty=true;persist();invalidate();return true;}
                 float base=H*.635f,bh2=H*.061f,gapY=H*.012f;int row=(int)((y-base)/(bh2+gapY)),col=x<(l+w*.5f)?0:1;if(y>=base&&row>=0&&row<3&&y<base+3*(bh2+gapY)){int action=row*2+col;switch(action){case 0:screen=1;selectedFly=-1;break;case 1:screen=2;break;case 2:saveFly();break;case 3:newWorld(random.nextLong());break;case 4:paused=!paused;notifyUser(paused?"Пауза":"Игра продолжается");break;default:screen=3;break;}invalidate();return true;}if(y>H*.88f){screen=4;invalidate();return true;}return true;
             }
             if(x>=mapL&&x<=mapR&&y>=mapT&&y<=mapB){float gx=clamp((x-mapL)/houseW,.02f,.98f),gy=clamp((y-mapT)/houseH,.02f,.98f);if(mode==MODE_TRAIN||mode==MODE_LAB){float[] adjusted=world.resolveTarget(gx,gy);targetMarkerX=adjusted[0];targetMarkerY=adjusted[1];tx=targetMarkerX;ty=targetMarkerY;targetActive=true;lastDecision=SystemClock.uptimeMillis();notifyUser(mode==MODE_TRAIN?"Учебная цель установлена":"Лабораторная цель установлена");}else if(showBrainPanel){showBrainPanel=false;}else{showHelp=true;}dirty=true;persist();invalidate();return true;}
             showHelp=true;invalidate();return true;}
+        private float touchDistance(MotionEvent e){float dx=e.getX(0)-e.getX(1),dy=e.getY(0)-e.getY(1);return (float)Math.hypot(dx,dy);}
         private void handleApiaryTouch(float x,float y){if(y>H*.83f){if(x<W*.22f){screen=0;}else if(x<W*.465f){recallFly();}else if(x<W*.68f){releaseFly();}else renameSelectedFly();return;}float baseY=H*.185f,ch=H*.133f,gy=H*.014f,baseX=W*.045f,cw=W*.292f,gx=W*.017f;if(x>=baseX&&y>=baseY&&y<baseY+4*(ch+gy)){int col=(int)((x-baseX)/(cw+gx)),row=(int)((y-baseY)/(ch+gy));int idx=row*3+col;if(col>=0&&col<3&&row>=0&&row<4&&idx<apiary.size())selectedFly=idx;}}
         private void handleAchievementTouch(float x,float y){if(y>H*.86f&&x>W*.72f){screen=0;return;}float rowY1=H*.63f,rowY2=H*.72f;if(y>rowY1-H*.035f&&y<rowY2+H*.055f){int row=y<H*.70f?0:1;int idx=Math.round((x/W-.085f)/.145f)+row*6;if(idx<0||idx>=SKINS.length)return;if((skinMask&(1<<idx))==0){if(coins<SKINS[idx].cost){notifyUser("Не хватает монет: нужно "+SKINS[idx].cost);return;}coins-=SKINS[idx].cost;skinMask|=1<<idx;notifyUser("Открыт скин "+SKINS[idx].name);}fly.skin=idx;checkAchievements();persist();return;}}
         boolean handleSystemBack(){

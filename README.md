@@ -1,6 +1,6 @@
-# FlyLife 1.0 — Seeded Fly-Life Sandbox
+# FlyLife 1.1 — Camera & Organic Flight
 
-**FlyLife 1.0.0** is an offline-first Android 2D life-simulation sandbox. One persistent fly lives in a seed-generated home; progress, skins, individual traits, achievements and the apiary are part of the same save. The release has no multiplayer or network dependency.
+**FlyLife 1.1.0** is an offline-first Android 2D life-simulation sandbox. One persistent fly lives in a seed-generated home; progress, skins, individual traits, achievements and the apiary are part of the same save. The release has no multiplayer or network dependency.
 
 ## Release features
 
@@ -28,9 +28,13 @@
 - Apiary income accrues while the app is open, including menu screens. Returning from the background credits a capped offline bonus of up to 1,500 coins.
 - Settings supports exact numeric seed entry, random new worlds, needs reset and save reset.
 
-### Graphics and platform
-- Landscape Android Canvas renderer, designed custom interface, detailed top-down room/furniture illustration, animation and an app icon.
-- Android min SDK 23, target/compile SDK 35, version name `1.0.0`.
+### Graphics and camera
+- Landscape renderer with a richer miniature-room / 2.5D look: bevelled floor tiles, contact shadows and extruded lower faces on furniture.
+- The fly is significantly larger and more readable on a phone screen, with animated wings, six legs, segmented body, compound eyes, antennae and 12 distinct skins.
+- Pinch to zoom, move two fingers to pan, and tap the ↺ button in the header to reset the camera. When zoomed in, one-finger dragging pans the camera; taps still set training goals.
+- Flight is slower and imperfect: turn inertia, mild heading drift, occasional course changes and less frequent decisions reduce the robotic straight-line movement.
+- Escape mode requires exploration before the fly notices and remembers the exit. Real Brain decisions persist longer, food seeking has priority when hungry, and eating restores more hunger.
+- Android min SDK 23, target/compile SDK 35, version name `1.1.0`. This is a 2.5D Canvas renderer, not a true polygonal 3D engine.
 - No third-party runtime libraries, internet permission, login or server requirement.
 
 ## What 1.0 does not claim
@@ -39,7 +43,7 @@ This is a polished 2D foundation, not a 3D game engine. It does not contain LAN 
 
 ## Build the APK
 
-The GitHub Actions workflow builds a debug APK when you push to `main` or `master` or manually run the workflow. In the repository, open **Actions → Build FlyLife Android APK → latest successful run → Artifacts → FlyLife-1.0-debug-apk**.
+The GitHub Actions workflow builds a debug APK when you push to `main` or `master` or manually run the workflow. In the repository, open **Actions → Build FlyLife Android APK → latest successful run → Artifacts → FlyLife-1.1-debug-apk**.
 
 For a local Android build, use Java 17, Android SDK platform 35 and Gradle 8.9:
 
