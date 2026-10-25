@@ -19,3 +19,11 @@
 ### Deliberate limits
 
 The renderer is 2.5D-style Android Canvas, not a full 3D engine. Multiplayer, multi-floor houses, sound, trained neural-network weights and the real FlyWire connectome are not included. `Real Brain` is an educational sensory/motor model, not integrated connectome data.
+
+
+## 1.2.0-3d
+- Replaced the 2D Canvas screen with native OpenGL ES 2.0 rendering.
+- Added perspective camera, room geometry, partition door gaps, window panels, 3D furniture, food meshes, and a low-poly animated fly.
+- Added orbit, pinch zoom, pan, and world-target touch controls.
+- Preserved the deterministic `WorldModel` seed generator and basic persistent needs/progress.
+- Marked 2D-only collection screens and advanced collision/AI work as unfinished instead of implying they were migrated.
